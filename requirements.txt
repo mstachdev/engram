@@ -1,0 +1,5 @@
+vllm>=0.3.0
+letta>=0.1.0
+numpy
+uuid
+python-dateutil 
