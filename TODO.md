@@ -9,8 +9,10 @@
 
 flutter
 [x] first test of flutter app entry (user test)
-[ ] remove fragment collection
-[ ] add ai chat
+[x] remove fragment collection
+[x] add ai chat
+[x] add consolidation page
+[ ] move text input UI into chat - eg, add button to upload file, add button to consolidate memory, add separate button to chat?
 [ ] check format that fragments are saved in
 [ ] check memory created from fragments
 [ ] enable AI chat to access memory based on seed text

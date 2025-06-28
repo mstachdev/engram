@@ -26,7 +26,7 @@ class EngramApp extends StatelessWidget {
             brightness: Brightness.light,
           ),
         ),
-        home: const HomePage(),
+        home: const MainPage(),
       ),
     );
   }
@@ -49,12 +49,26 @@ class EngramState extends ChangeNotifier {
   List<ChatMessage> chatMessages = [];
   bool isLoading = false;
   bool isChatLoading = false;
+  bool isConsolidating = false;
   String? error;
   String? successMessage;
   String? availableModel; // Store the available model name
   
+  // Content for consolidation workflow
+  String? rawContent;
+  String? consolidatedContent;
+  String? contentSource; // 'text_input' or filename
+  
   static const String apiBase = 'http://localhost:5000';
   static const String vllmApiBase = 'http://localhost:8000';
+
+  // Navigate to consolidation page with text content
+  void navigateToConsolidation(String content, String source) {
+    rawContent = content;
+    contentSource = source;
+    consolidatedContent = null; // Reset previous consolidation
+    notifyListeners();
+  }
 
   Future<void> addTextFragments(String text, {String? sessionName}) async {
     if (text.trim().isEmpty) return;
@@ -74,6 +88,8 @@ class EngramState extends ChangeNotifier {
       final result = jsonDecode(response.body);
       if (result['success'] == true) {
         successMessage = 'Added ${result['fragments_added']} fragments';
+        // Navigate to consolidation page
+        navigateToConsolidation(text, 'text_input');
       } else {
         error = result['error'] ?? 'Unknown error';
       }
@@ -103,6 +119,8 @@ class EngramState extends ChangeNotifier {
       final result = jsonDecode(response.body);
       if (result['success'] == true) {
         successMessage = 'Extracted ${result['fragments_added']} fragments from ${file.name}';
+        // Navigate to consolidation page with file content
+        navigateToConsolidation(content, file.name);
       } else {
         error = result['error'] ?? 'Unknown error';
       }
@@ -195,6 +213,77 @@ class EngramState extends ChangeNotifier {
     setChatLoading(false);
   }
 
+  Future<void> consolidateMemory() async {
+    if (rawContent == null) return;
+    
+    await _fetchAvailableModels();
+    setConsolidating(true);
+    
+    try {
+      final prompt = """You are helping build memories from fragments of text. Try to infer what the user is writing about. Then, complete the thoughts so they are full sentences. Your task is add text to make the fragments the user provides seem like a complete journal entry. Do not add any new details but try to add words so there is clarity.
+
+Text to consolidate:
+${rawContent!}""";
+
+      final response = await http.post(
+        Uri.parse('$vllmApiBase/v1/chat/completions'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'model': availableModel ?? '../models/Qwen2.5-3B-Instruct-GPTQ-Int8/',
+          'messages': [
+            {'role': 'user', 'content': prompt}
+          ],
+          'max_tokens': 1000,
+          'temperature': 0.7,
+        }),
+      );
+
+      if (response.statusCode == 200) {
+        final result = jsonDecode(response.body);
+        consolidatedContent = result['choices'][0]['message']['content'];
+        successMessage = 'Memory consolidated successfully!';
+      } else {
+        error = 'Consolidation failed: ${response.statusCode}';
+      }
+    } catch (e) {
+      error = 'Consolidation error: $e';
+    }
+    setConsolidating(false);
+  }
+
+  Future<void> approveConsolidation() async {
+    if (consolidatedContent == null || rawContent == null) return;
+    
+    setLoading(true);
+    try {
+      // Save fragments to SQLite (already done during upload, but mark as processed)
+      // TODO: Save consolidation to Letta database
+      
+      successMessage = 'Memory approved and saved!';
+      
+      // Reset state and go back to main page
+      rawContent = null;
+      consolidatedContent = null;
+      contentSource = null;
+      
+    } catch (e) {
+      error = 'Save error: $e';
+    }
+    setLoading(false);
+  }
+
+  void rejectConsolidation() {
+    consolidatedContent = null;
+    notifyListeners();
+  }
+
+  void backToMainPage() {
+    rawContent = null;
+    consolidatedContent = null;
+    contentSource = null;
+    notifyListeners();
+  }
+
   void clearChat() {
     chatMessages.clear();
     notifyListeners();
@@ -211,6 +300,11 @@ class EngramState extends ChangeNotifier {
 
   void setChatLoading(bool loading) {
     isChatLoading = loading;
+    notifyListeners();
+  }
+
+  void setConsolidating(bool consolidating) {
+    isConsolidating = consolidating;
     notifyListeners();
   }
 
@@ -243,6 +337,24 @@ class Fragment {
       source: json['source'],
       createdAt: DateTime.parse(json['created_at']),
       processed: json['processed'] == 1 || json['processed'] == true,
+    );
+  }
+}
+
+class MainPage extends StatelessWidget {
+  const MainPage({Key? key}) : super(key: key);
+
+  @override
+  Widget build(BuildContext context) {
+    return Consumer<EngramState>(
+      builder: (context, state, child) {
+        // Show consolidation page if we have raw content
+        if (state.rawContent != null) {
+          return const ConsolidationPage();
+        }
+        // Otherwise show the main input page
+        return const HomePage();
+      },
     );
   }
 }
@@ -666,5 +778,242 @@ class _HomePageState extends State<HomePage> {
     _chatController.dispose();
     _chatScrollController.dispose();
     super.dispose();
+  }
+}
+
+class ConsolidationPage extends StatelessWidget {
+  const ConsolidationPage({Key? key}) : super(key: key);
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('🧠 Memory Consolidation'),
+        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
+        leading: Consumer<EngramState>(
+          builder: (context, state, child) {
+            return IconButton(
+              icon: const Icon(Icons.arrow_back),
+              onPressed: state.backToMainPage,
+            );
+          },
+        ),
+      ),
+      body: Consumer<EngramState>(
+        builder: (context, state, child) {
+          return SingleChildScrollView(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Status Messages
+                if (state.error != null) ...[
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(12),
+                    margin: const EdgeInsets.only(bottom: 16),
+                    decoration: BoxDecoration(
+                      color: Colors.red.shade100,
+                      border: Border.all(color: Colors.red.shade300),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            state.error!,
+                            style: TextStyle(color: Colors.red.shade700),
+                          ),
+                        ),
+                        IconButton(
+                          onPressed: state.clearMessages,
+                          icon: const Icon(Icons.close),
+                          iconSize: 16,
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+                
+                if (state.successMessage != null) ...[
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(12),
+                    margin: const EdgeInsets.only(bottom: 16),
+                    decoration: BoxDecoration(
+                      color: Colors.green.shade100,
+                      border: Border.all(color: Colors.green.shade300),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            state.successMessage!,
+                            style: TextStyle(color: Colors.green.shade700),
+                          ),
+                        ),
+                        IconButton(
+                          onPressed: state.clearMessages,
+                          icon: const Icon(Icons.close),
+                          iconSize: 16,
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+
+                // Original Content Section
+                Card(
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            const Icon(Icons.description, size: 20),
+                            const SizedBox(width: 8),
+                            Text(
+                              'Original Content',
+                              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            const Spacer(),
+                            Chip(
+                              label: Text(
+                                state.contentSource == 'text_input' 
+                                    ? 'Text Input' 
+                                    : 'File: ${state.contentSource}',
+                                style: const TextStyle(fontSize: 12),
+                              ),
+                              backgroundColor: Colors.blue.shade100,
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 12),
+                        Container(
+                          width: double.infinity,
+                          height: 200,
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: Colors.grey.shade50,
+                            border: Border.all(color: Colors.grey.shade300),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: SingleChildScrollView(
+                            child: Text(
+                              state.rawContent ?? '',
+                              style: const TextStyle(fontSize: 14, height: 1.5),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        SizedBox(
+                          width: double.infinity,
+                          child: ElevatedButton.icon(
+                            onPressed: state.isConsolidating ? null : state.consolidateMemory,
+                            icon: state.isConsolidating 
+                                ? const SizedBox(
+                                    width: 16,
+                                    height: 16,
+                                    child: CircularProgressIndicator(strokeWidth: 2),
+                                  )
+                                : const Icon(Icons.auto_fix_high),
+                            label: Text(state.isConsolidating ? 'Consolidating...' : 'Consolidate Memory'),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Theme.of(context).primaryColor,
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(vertical: 12),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+
+                // Consolidated Content Section (shown after consolidation)
+                if (state.consolidatedContent != null) ...[
+                  const SizedBox(height: 16),
+                  Card(
+                    child: Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              const Icon(Icons.psychology, size: 20, color: Colors.green),
+                              const SizedBox(width: 8),
+                              Text(
+                                'Consolidated Memory',
+                                style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.green.shade700,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 12),
+                          Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: Colors.green.shade50,
+                              border: Border.all(color: Colors.green.shade300),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Text(
+                              state.consolidatedContent!,
+                              style: const TextStyle(fontSize: 14, height: 1.5),
+                            ),
+                          ),
+                          const SizedBox(height: 16),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: ElevatedButton.icon(
+                                  onPressed: state.isLoading ? null : state.approveConsolidation,
+                                  icon: state.isLoading 
+                                      ? const SizedBox(
+                                          width: 16,
+                                          height: 16,
+                                          child: CircularProgressIndicator(strokeWidth: 2),
+                                        )
+                                      : const Icon(Icons.check),
+                                  label: Text(state.isLoading ? 'Saving...' : 'Approve & Save'),
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: Colors.green,
+                                    foregroundColor: Colors.white,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: OutlinedButton.icon(
+                                  onPressed: state.rejectConsolidation,
+                                  icon: const Icon(Icons.close),
+                                  label: const Text('Reject'),
+                                  style: OutlinedButton.styleFrom(
+                                    foregroundColor: Colors.red,
+                                    side: BorderSide(color: Colors.red.shade300),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          );
+        },
+      ),
+    );
   }
 } 
