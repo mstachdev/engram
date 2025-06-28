@@ -1,1 +1,1 @@
- 
+# Cortex module - handles information intake and fragment extraction 

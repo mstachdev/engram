@@ -1,5 +1,12 @@
+# Hippocampus (Memory Consolidation)
+openai
+letta
+python-dateutil
+
+# Cortex (Fragment Processing)
+flask>=2.3.0
+flask-cors>=4.0.0
+
 vllm>=0.3.0
-letta>=0.1.0
 numpy
-uuid
-python-dateutil 
+uuid 

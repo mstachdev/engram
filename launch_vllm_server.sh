@@ -16,4 +16,4 @@ python -m vllm.entrypoints.openai.api_server \
     --model "${MODEL_PATH}" \
     --gpu-memory-utilization 0.8 \
     --max-model-len 2048 \
-    --disable-torch-compile
+    --enforce-eager
