@@ -1,6 +1,9 @@
-# Engram
+# Engram - Save you
 
-A memory system using free text with free word order - with AI building the memories and helping access.
+An app to store your memories. 
+Write fragments - free form, free word order. 
+AI structures the fragments into "engrams".
+Talk to your engrams / talk to yourself.
 
 ## Architecture
 
@@ -12,48 +15,22 @@ A memory system using free text with free word order - with AI building the memo
   - Processes raw text input and uploaded files
   - Extracts meaningful fragments from unstructured data
   - Stores fragments in SQLite database for fast access
-  - Provides web interface for user interaction
 - **Database**: SQLite (fragments.db) - can sync to cloud for mobile apps
 - **Analogy**: Like the brain's sensory cortex that processes incoming information
 
-### 🌊 **Hippocampus** (Memory Consolidation)  
-- **Purpose**: Consolidates fragments into structured, narrative memories
+### 🌊 **Hippocampus** (Memory Building)  
+- **Purpose**: Builds fragments into structured, narrative memories (called "engrams")
 - **Functions**:
-  - Takes fragments from cortex and creates coherent stories
-  - Uses LLM to fill gaps and embellish memories
-  - Stores consolidated memories with embeddings
+  - Uses LLM to fill gaps and embellish fragments into memories (called "engrams")
+  - Stores engrams with embeddings
   - Enables semantic search and retrieval
 - **Database**: Letta (vector database) - for semantic memory storage
 - **Analogy**: Like the brain's hippocampus that consolidates episodic memories
 
 ### 📱 **Data Flow**
 ```
-Raw Input → Cortex (extract fragments) → Hippocampus (consolidate memory) → Long-term Storage
+Raw Input → Cortex (extract fragments) → Hippocampus (build fragments into memory/engram) → Long-term Storage
 ```
-
-## Database Architecture
-
-### **Cortex Database (SQLite)**
-- **Content**: Raw fragments, metadata, processing status
-- **Purpose**: Fast input, temporary storage, preprocessing  
-- **Tables**: fragments, sessions, fragment_sessions
-- **Benefits**: Local storage, can sync to cloud (Firebase/Supabase)
-
-### **Hippocampus Database (Letta)**
-- **Content**: Consolidated memories with semantic embeddings
-- **Purpose**: Long-term storage, similarity search, RAG
-- **Benefits**: Vector search, semantic retrieval, AI-ready
-
-## Features
-- 🧩 **Fragment Extraction**: Automatic extraction from text and files
-- 🌐 **Web Interface**: Modern, responsive UI for fragment input
-- 💻 **CLI Interface**: Interactive command-line interface
-- 📁 **File Upload**: Support for text files, documents
-- 🔄 **Session Management**: Group related fragments together
-- 🧠 **Memory Consolidation**: AI-powered story creation from fragments
-- 🔍 **Smart Search**: Vector-based semantic memory retrieval
-- 📊 **Metadata Tracking**: Automatic timestamps, sources, processing status
-- 🚀 **Mobile Ready**: SQLite + cloud sync architecture
 
 ## Project Structure
 ```
@@ -62,26 +39,41 @@ engram/
 ├── main_cli.py                  # CLI interface launcher
 ├── main_app.py                  # Web application launcher
 ├── launch_vllm_server.sh        # vLLM server launcher
+├── search_database.py           # Database search utility
+├── fragments.txt                # Fragment storage file
+├── TODO.md                      # Project todo list
+├── murrinhpatha-free-word-order-article-2023.pdf  # Research document
 ├── cortex/                      # Cortex module (information processing)
 │   ├── __init__.py
 │   ├── api.py                   # Flask API server
 │   ├── database.py              # SQLite fragment storage
 │   ├── processor.py             # Fragment extraction logic
 │   ├── requirements.txt         # Cortex dependencies
-│   ├── static/                  # Web interface
-│   │   └── index.html           # Modern web UI
 │   └── data/                    # SQLite database storage
 │       └── fragments.db         # Fragment database
-├── hippocampus/                 # Hippocampus module (memory consolidation)
+├── hippocampus/                 # Hippocampus module (memory building)
 │   ├── __init__.py
 │   ├── llm.py                   # LLM client for vLLM server
 │   ├── memory.py                # Letta memory storage
-│   ├── completion.py            # Memory consolidation logic
+│   ├── completion.py            # Memory building logic
 │   ├── query.py                 # Memory retrieval
 │   ├── requirements.txt         # Hippocampus dependencies
-│   └── data/                    # Letta database
-│       └── memories.letta       # Consolidated memories
-├── flutter_app/                 # Flutter mobile app (in development)
+│   └── data/                    # Letta database storage
+├── flutter_app/                 # Flutter mobile app
+│   ├── lib/
+│   │   └── main.dart            # Main Flutter app with BuildMemoryPage
+│   ├── web/                     # Web assets
+│   │   ├── index.html
+│   │   ├── manifest.json
+│   │   ├── favicon.png
+│   │   └── icons/               # App icons
+│   ├── test/
+│   │   └── widget_test.dart     # Flutter tests
+│   ├── pubspec.yaml             # Flutter dependencies
+│   ├── pubspec.lock
+│   ├── analysis_options.yaml
+│   └── README.md                # Flutter app documentation
+├── venv/                        # Python virtual environment
 ├── requirements.txt             # Combined dependencies
 ├── .gitignore
 └── README.md
@@ -113,7 +105,7 @@ Then open your browser to: `http://localhost:5000`
 **Features:**
 1. **Add Fragments**: Enter text or upload files
 2. **Review Fragments**: See extracted fragments in the collection
-3. **Select & Process**: Choose fragments to consolidate into memories
+3. **Select & Process**: Choose fragments to build into memories
 4. **View Results**: See the AI-generated narrative memory
 
 ### 💻 Command Line Interface

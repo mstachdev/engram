@@ -8,14 +8,21 @@
 [x] create test "fragments.txt"
 
 flutter
-[x] first test of flutter app entry (user test)
+[x] first test flutter app 
 [x] remove fragment collection
-[x] add ai chat
+[x] remove ai chat
+[x] add dark mode
 [x] add consolidation page
-[ ] move text input UI into chat - eg, add button to upload file, add button to consolidate memory, add separate button to chat?
+
+cortex
+[ ] read all code, reduce number of files
 [ ] check format that fragments are saved in
-[ ] check memory created from fragments
-[ ] enable AI chat to access memory based on seed text
+
+hippocampus
+[ ] read all code, reduce number of files
+[ ] add letta memory
+[ ] test retrieval into context (RAG?)
+
 
 other
 [ ] add feature where you can group fragments (usually) sentences

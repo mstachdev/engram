@@ -17,13 +17,24 @@ class EngramApp extends StatelessWidget {
     return ChangeNotifierProvider(
       create: (context) => EngramState(),
       child: MaterialApp(
-        title: 'Engram - Brain Memory System',
+        title: 'Engram',
         theme: ThemeData(
-          primarySwatch: Colors.deepPurple,
           useMaterial3: true,
           colorScheme: ColorScheme.fromSeed(
-            seedColor: Colors.deepPurple,
-            brightness: Brightness.light,
+            seedColor: const Color(0xFF6366F1), // Indigo
+            brightness: Brightness.dark,
+          ).copyWith(
+            surface: const Color(0xFF0F0F23), // Deep dark blue
+            onSurface: const Color(0xFFE2E8F0), // Light gray text
+            primary: const Color(0xFF6366F1), // Indigo
+            secondary: const Color(0xFF8B5CF6), // Purple
+            tertiary: const Color(0xFF06B6D4), // Cyan
+          ),
+          scaffoldBackgroundColor: const Color(0xFF0F0F23),
+          cardColor: const Color(0xFF1E1E3F),
+          appBarTheme: const AppBarTheme(
+            backgroundColor: Color(0xFF1E1E3F),
+            foregroundColor: Color(0xFFE2E8F0),
           ),
         ),
         home: const MainPage(),
@@ -32,41 +43,29 @@ class EngramApp extends StatelessWidget {
   }
 }
 
-class ChatMessage {
-  final String content;
-  final bool isUser;
-  final DateTime timestamp;
 
-  ChatMessage({
-    required this.content,
-    required this.isUser,
-    required this.timestamp,
-  });
-}
 
 class EngramState extends ChangeNotifier {
   List<Fragment> fragments = [];
-  List<ChatMessage> chatMessages = [];
   bool isLoading = false;
-  bool isChatLoading = false;
-  bool isConsolidating = false;
+  bool isBuilding = false;
   String? error;
   String? successMessage;
   String? availableModel; // Store the available model name
   
-  // Content for consolidation workflow
+  // Content for building workflow
   String? rawContent;
-  String? consolidatedContent;
+  String? builtContent;
   String? contentSource; // 'text_input' or filename
   
   static const String apiBase = 'http://localhost:5000';
   static const String vllmApiBase = 'http://localhost:8000';
 
-  // Navigate to consolidation page with text content
-  void navigateToConsolidation(String content, String source) {
+  // Navigate to build memory page with text content
+  void navigateToBuildMemory(String content, String source) {
     rawContent = content;
     contentSource = source;
-    consolidatedContent = null; // Reset previous consolidation
+    builtContent = null; // Reset previous build
     notifyListeners();
   }
 
@@ -88,8 +87,8 @@ class EngramState extends ChangeNotifier {
       final result = jsonDecode(response.body);
       if (result['success'] == true) {
         successMessage = 'Added ${result['fragments_added']} fragments';
-        // Navigate to consolidation page
-        navigateToConsolidation(text, 'text_input');
+        // Navigate to build memory page
+        navigateToBuildMemory(text, 'text_input');
       } else {
         error = result['error'] ?? 'Unknown error';
       }
@@ -119,8 +118,8 @@ class EngramState extends ChangeNotifier {
       final result = jsonDecode(response.body);
       if (result['success'] == true) {
         successMessage = 'Extracted ${result['fragments_added']} fragments from ${file.name}';
-        // Navigate to consolidation page with file content
-        navigateToConsolidation(content, file.name);
+        // Navigate to build memory page with file content
+        navigateToBuildMemory(content, file.name);
       } else {
         error = result['error'] ?? 'Unknown error';
       }
@@ -153,76 +152,18 @@ class EngramState extends ChangeNotifier {
     }
   }
 
-  Future<void> sendChatMessage(String message) async {
-    if (message.trim().isEmpty) return;
 
-    // Fetch available models if we haven't already
-    await _fetchAvailableModels();
 
-    // Add user message
-    chatMessages.add(ChatMessage(
-      content: message,
-      isUser: true,
-      timestamp: DateTime.now(),
-    ));
-    notifyListeners();
-
-    setChatLoading(true);
-    try {
-      final response = await http.post(
-        Uri.parse('$vllmApiBase/v1/chat/completions'),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({
-          'model': availableModel ?? '../models/Qwen2.5-3B-Instruct-GPTQ-Int8/', // Use fetched model or known working model
-          'messages': [
-            {'role': 'user', 'content': message}
-          ],
-          'max_tokens': 500,
-          'temperature': 0.7,
-        }),
-      );
-
-      if (response.statusCode == 200) {
-        final result = jsonDecode(response.body);
-        final aiResponse = result['choices'][0]['message']['content'];
-        
-        // Add AI response
-        chatMessages.add(ChatMessage(
-          content: aiResponse,
-          isUser: false,
-          timestamp: DateTime.now(),
-        ));
-      } else {
-        error = 'AI server error: ${response.statusCode}';
-        // Add error message to chat
-        chatMessages.add(ChatMessage(
-          content: 'Sorry, I encountered an error. Please make sure the vLLM server is running.',
-          isUser: false,
-          timestamp: DateTime.now(),
-        ));
-      }
-    } catch (e) {
-      error = 'Chat connection error: $e';
-      // Add error message to chat
-      chatMessages.add(ChatMessage(
-        content: 'Sorry, I cannot connect to the AI server. Please make sure the vLLM server is running.',
-        isUser: false,
-        timestamp: DateTime.now(),
-      ));
-    }
-    setChatLoading(false);
-  }
-
-  Future<void> consolidateMemory() async {
+  Future<void> buildMemory() async {
     if (rawContent == null) return;
     
     await _fetchAvailableModels();
-    setConsolidating(true);
+    setBuilding(true);
     
     try {
       final prompt = """You are helping build memories from fragments of text. Try to infer what the user is writing about. Then, complete the thoughts so they are full sentences. Your task is add text to make the fragments the user provides seem like a complete journal entry. Do not add any new details but try to add words so there is clarity.
 
-Text to consolidate:
+Text to build into memory:
 ${rawContent!}""";
 
       final response = await http.post(
@@ -240,30 +181,30 @@ ${rawContent!}""";
 
       if (response.statusCode == 200) {
         final result = jsonDecode(response.body);
-        consolidatedContent = result['choices'][0]['message']['content'];
-        successMessage = 'Memory consolidated successfully!';
+        builtContent = result['choices'][0]['message']['content'];
+        successMessage = 'Memory built successfully!';
       } else {
-        error = 'Consolidation failed: ${response.statusCode}';
+        error = 'Memory building failed: ${response.statusCode}';
       }
     } catch (e) {
-      error = 'Consolidation error: $e';
+      error = 'Memory building error: $e';
     }
-    setConsolidating(false);
+    setBuilding(false);
   }
 
-  Future<void> approveConsolidation() async {
-    if (consolidatedContent == null || rawContent == null) return;
+  Future<void> approveBuild() async {
+    if (builtContent == null || rawContent == null) return;
     
     setLoading(true);
     try {
       // Save fragments to SQLite (already done during upload, but mark as processed)
-      // TODO: Save consolidation to Letta database
+      // TODO: Save built memory to Letta database
       
       successMessage = 'Memory approved and saved!';
       
       // Reset state and go back to main page
       rawContent = null;
-      consolidatedContent = null;
+      builtContent = null;
       contentSource = null;
       
     } catch (e) {
@@ -272,20 +213,15 @@ ${rawContent!}""";
     setLoading(false);
   }
 
-  void rejectConsolidation() {
-    consolidatedContent = null;
+  void rejectBuild() {
+    builtContent = null;
     notifyListeners();
   }
 
   void backToMainPage() {
     rawContent = null;
-    consolidatedContent = null;
+    builtContent = null;
     contentSource = null;
-    notifyListeners();
-  }
-
-  void clearChat() {
-    chatMessages.clear();
     notifyListeners();
   }
 
@@ -298,13 +234,8 @@ ${rawContent!}""";
     notifyListeners();
   }
 
-  void setChatLoading(bool loading) {
-    isChatLoading = loading;
-    notifyListeners();
-  }
-
-  void setConsolidating(bool consolidating) {
-    isConsolidating = consolidating;
+  void setBuilding(bool building) {
+    isBuilding = building;
     notifyListeners();
   }
 
@@ -348,9 +279,9 @@ class MainPage extends StatelessWidget {
   Widget build(BuildContext context) {
     return Consumer<EngramState>(
       builder: (context, state, child) {
-        // Show consolidation page if we have raw content
+        // Show build memory page if we have raw content
         if (state.rawContent != null) {
-          return const ConsolidationPage();
+          return const BuildMemoryPage();
         }
         // Otherwise show the main input page
         return const HomePage();
@@ -369,392 +300,264 @@ class HomePage extends StatefulWidget {
 class _HomePageState extends State<HomePage> {
   final TextEditingController _textController = TextEditingController();
   final TextEditingController _sessionController = TextEditingController();
-  final TextEditingController _chatController = TextEditingController();
-  final ScrollController _chatScrollController = ScrollController();
-  bool _showTextInput = true; // Toggle between text input and file upload
+  bool _hasText = false;
 
   @override
   void initState() {
     super.initState();
+    // Listen to text changes to enable/disable button
+    _textController.addListener(_onTextChanged);
   }
 
-  void _scrollToBottom() {
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (_chatScrollController.hasClients) {
-        _chatScrollController.animateTo(
-          _chatScrollController.position.maxScrollExtent,
-          duration: const Duration(milliseconds: 300),
-          curve: Curves.easeOut,
-        );
-      }
-    });
+  void _onTextChanged() {
+    final hasText = _textController.text.trim().isNotEmpty;
+    if (hasText != _hasText) {
+      setState(() {
+        _hasText = hasText;
+      });
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('🧠 Engram - Cortex Interface'),
-        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-      ),
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       body: Consumer<EngramState>(
         builder: (context, state, child) {
-          // Auto-scroll chat when new messages arrive
-          if (state.chatMessages.isNotEmpty) {
-            _scrollToBottom();
-          }
-
-          return Column(
-            children: [
-              // Status Messages
-              if (state.error != null)
-                Container(
-                  width: double.infinity,
-                  margin: const EdgeInsets.all(16),
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: Colors.red.shade100,
-                    border: Border.all(color: Colors.red.shade300),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          state.error!,
-                          style: TextStyle(color: Colors.red.shade700),
-                        ),
-                      ),
-                      IconButton(
-                        onPressed: state.clearMessages,
-                        icon: const Icon(Icons.close),
-                        iconSize: 16,
-                      ),
-                    ],
-                  ),
-                ),
-              
-              if (state.successMessage != null)
-                Container(
-                  width: double.infinity,
-                  margin: const EdgeInsets.all(16),
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: Colors.green.shade100,
-                    border: Border.all(color: Colors.green.shade300),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          state.successMessage!,
-                          style: TextStyle(color: Colors.green.shade700),
-                        ),
-                      ),
-                      IconButton(
-                        onPressed: state.clearMessages,
-                        icon: const Icon(Icons.close),
-                        iconSize: 16,
-                      ),
-                    ],
-                  ),
-                ),
-
-              // Start a Memory Section (Combined)
-              Container(
-                margin: const EdgeInsets.all(16),
-                child: Card(
-                  child: Padding(
-                    padding: const EdgeInsets.all(16),
+          return SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.all(24.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Header
+                  Container(
+                    margin: const EdgeInsets.only(bottom: 32),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Text(
-                          '💭 Start a Memory',
-                          style: TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        const SizedBox(height: 16),
-                        
-                        // Toggle buttons
                         Row(
                           children: [
-                            Expanded(
-                              child: ElevatedButton.icon(
-                                onPressed: () => setState(() => _showTextInput = true),
-                                icon: const Icon(Icons.edit),
-                                label: const Text('Write Text'),
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: _showTextInput 
-                                      ? Theme.of(context).primaryColor 
-                                      : Colors.grey.shade300,
-                                  foregroundColor: _showTextInput 
-                                      ? Colors.white 
-                                      : Colors.black54,
-                                ),
+                            Container(
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                color: Theme.of(context).colorScheme.primary.withOpacity(0.1),
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: Icon(
+                                Icons.psychology,
+                                color: Theme.of(context).colorScheme.primary,
+                                size: 32,
                               ),
                             ),
-                            const SizedBox(width: 8),
+                            const SizedBox(width: 16),
                             Expanded(
-                              child: ElevatedButton.icon(
-                                onPressed: () => setState(() => _showTextInput = false),
-                                icon: const Icon(Icons.upload_file),
-                                label: const Text('Upload File'),
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: !_showTextInput 
-                                      ? Theme.of(context).primaryColor 
-                                      : Colors.grey.shade300,
-                                  foregroundColor: !_showTextInput 
-                                      ? Colors.white 
-                                      : Colors.black54,
-                                ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'Engram',
+                                    style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                                      fontWeight: FontWeight.bold,
+                                      color: Theme.of(context).colorScheme.onSurface,
+                                    ),
+                                  ),
+                                  Text(
+                                    "Save you.",
+                                    style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                                      color: Theme.of(context).colorScheme.onSurface.withOpacity(0.7),
+                                    ),
+                                  ),
+                                ],
                               ),
                             ),
                           ],
                         ),
-                        
-                        const SizedBox(height: 16),
-                        
-                        // Content based on selection
-                        if (_showTextInput) ...[
-                          TextField(
-                            controller: _textController,
-                            maxLines: 4,
-                            decoration: const InputDecoration(
-                              labelText: 'Enter your thoughts or fragments',
-                              hintText: 'Type your thoughts here...',
-                              border: OutlineInputBorder(),
-                            ),
-                          ),
-                          const SizedBox(height: 12),
-                          TextField(
-                            controller: _sessionController,
-                            decoration: const InputDecoration(
-                              labelText: 'Session Name (optional)',
-                              hintText: 'e.g., Morning thoughts, Work notes',
-                              border: OutlineInputBorder(),
-                            ),
-                          ),
-                          const SizedBox(height: 16),
-                          SizedBox(
-                            width: double.infinity,
-                            child: ElevatedButton(
-                              onPressed: state.isLoading
-                                  ? null
-                                  : () async {
-                                      await state.addTextFragments(
-                                        _textController.text,
-                                        sessionName: _sessionController.text.isEmpty
-                                            ? null
-                                            : _sessionController.text,
-                                      );
-                                      _textController.clear();
-                                    },
-                              child: state.isLoading
-                                  ? const CircularProgressIndicator()
-                                  : const Text('Extract Fragments'),
-                            ),
-                          ),
-                        ] else ...[
-                          const Text(
-                            'Select a file to upload and extract fragments from:',
-                            style: TextStyle(fontSize: 14, color: Colors.grey),
-                          ),
-                          const SizedBox(height: 16),
-                          SizedBox(
-                            width: double.infinity,
-                            child: ElevatedButton.icon(
-                              onPressed: state.isLoading
-                                  ? null
-                                  : () async {
-                                      final result = await FilePicker.platform.pickFiles(
-                                        type: FileType.custom,
-                                        allowedExtensions: ['txt', 'md', 'json'],
-                                      );
-                                      
-                                      if (result != null && result.files.isNotEmpty) {
-                                        await state.uploadFile(result.files.first);
-                                      }
-                                    },
-                              icon: const Icon(Icons.upload_file),
-                              label: const Text('Select & Upload File'),
-                            ),
-                          ),
-                        ],
                       ],
                     ),
                   ),
-                ),
-              ),
 
-              // AI Chat Section
-              Expanded(
-                child: Container(
-                  margin: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-                  child: Card(
-                    child: Padding(
+                  // Status Messages
+                  if (state.error != null) ...[
+                    Container(
+                      width: double.infinity,
                       padding: const EdgeInsets.all(16),
+                      margin: const EdgeInsets.only(bottom: 24),
+                      decoration: BoxDecoration(
+                        color: Colors.red.shade900.withOpacity(0.2),
+                        border: Border.all(color: Colors.red.shade600),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(Icons.error, color: Colors.red.shade400, size: 20),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Text(
+                              state.error!,
+                              style: TextStyle(color: Colors.red.shade300),
+                            ),
+                          ),
+                          IconButton(
+                            onPressed: state.clearMessages,
+                            icon: Icon(Icons.close, color: Colors.red.shade400),
+                            iconSize: 20,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                  
+                  if (state.successMessage != null) ...[
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(16),
+                      margin: const EdgeInsets.only(bottom: 24),
+                      decoration: BoxDecoration(
+                        color: Colors.green.shade900.withOpacity(0.2),
+                        border: Border.all(color: Colors.green.shade600),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(Icons.check_circle, color: Colors.green.shade400, size: 20),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Text(
+                              state.successMessage!,
+                              style: TextStyle(color: Colors.green.shade300),
+                            ),
+                          ),
+                          IconButton(
+                            onPressed: state.clearMessages,
+                            icon: Icon(Icons.close, color: Colors.green.shade400),
+                            iconSize: 20,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+
+                  // Main Text Input Section
+                  Expanded(
+                    child: Container(
+                      padding: const EdgeInsets.all(24),
+                      decoration: BoxDecoration(
+                        color: Theme.of(context).cardColor,
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(
+                          color: Theme.of(context).colorScheme.primary.withOpacity(0.2),
+                        ),
+                      ),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              const Text(
-                                '🤖 AI Chat',
-                                style: TextStyle(
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                              if (state.chatMessages.isNotEmpty)
-                                TextButton.icon(
-                                  onPressed: state.clearChat,
-                                  icon: const Icon(Icons.clear_all, size: 16),
-                                  label: const Text('Clear'),
-                                  style: TextButton.styleFrom(
-                                    foregroundColor: Colors.grey,
-                                  ),
-                                ),
-                            ],
+                          Text(
+                            'Add fragments',
+                            style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                              fontWeight: FontWeight.bold,
+                              color: Theme.of(context).colorScheme.primary,
+                            ),
                           ),
                           const SizedBox(height: 8),
-                          const SizedBox(height: 16),
-                          
-                          // Chat Messages
-                          Expanded(
-                            child: state.chatMessages.isEmpty
-                                ? const Center(
-                                    child: Text(
-                                      '👋 Start a conversation with your AI assistant!\n\nMake sure the vLLM server is running:\n./launch_vllm_server.sh',
-                                      textAlign: TextAlign.center,
-                                      style: TextStyle(
-                                        fontSize: 16,
-                                        color: Colors.grey,
-                                      ),
-                                    ),
-                                  )
-                                : ListView.builder(
-                                    controller: _chatScrollController,
-                                    itemCount: state.chatMessages.length,
-                                    itemBuilder: (context, index) {
-                                      final message = state.chatMessages[index];
-                                      
-                                      return Container(
-                                        margin: const EdgeInsets.only(bottom: 12),
-                                        child: Row(
-                                          crossAxisAlignment: CrossAxisAlignment.start,
-                                          children: [
-                                            Container(
-                                              width: 32,
-                                              height: 32,
-                                              decoration: BoxDecoration(
-                                                color: message.isUser 
-                                                    ? Colors.blue.shade100 
-                                                    : Colors.green.shade100,
-                                                borderRadius: BorderRadius.circular(16),
-                                              ),
-                                              child: Icon(
-                                                message.isUser ? Icons.person : Icons.smart_toy,
-                                                size: 18,
-                                                color: message.isUser 
-                                                    ? Colors.blue.shade700 
-                                                    : Colors.green.shade700,
-                                              ),
-                                            ),
-                                            const SizedBox(width: 12),
-                                            Expanded(
-                                              child: Column(
-                                                crossAxisAlignment: CrossAxisAlignment.start,
-                                                children: [
-                                                  Text(
-                                                    message.isUser ? 'You' : 'AI Assistant',
-                                                    style: TextStyle(
-                                                      fontWeight: FontWeight.bold,
-                                                      fontSize: 12,
-                                                      color: message.isUser 
-                                                          ? Colors.blue.shade700 
-                                                          : Colors.green.shade700,
-                                                    ),
-                                                  ),
-                                                  const SizedBox(height: 4),
-                                                  Container(
-                                                    padding: const EdgeInsets.all(12),
-                                                    decoration: BoxDecoration(
-                                                      color: message.isUser 
-                                                          ? Colors.blue.shade50 
-                                                          : Colors.grey.shade50,
-                                                      borderRadius: BorderRadius.circular(8),
-                                                      border: Border.all(
-                                                        color: message.isUser 
-                                                            ? Colors.blue.shade200 
-                                                            : Colors.grey.shade200,
-                                                      ),
-                                                    ),
-                                                    child: Text(
-                                                      message.content,
-                                                      style: const TextStyle(fontSize: 14),
-                                                    ),
-                                                  ),
-                                                  const SizedBox(height: 4),
-                                                  Text(
-                                                    message.timestamp.toLocal().toString().split('.')[0],
-                                                    style: const TextStyle(
-                                                      fontSize: 10,
-                                                      color: Colors.grey,
-                                                    ),
-                                                  ),
-                                                ],
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      );
-                                    },
-                                ),
+                          Text(
+                          'This will build your fragments into a memory.',
+                            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                              color: Theme.of(context).colorScheme.onSurface.withOpacity(0.7),
+                            ),
                           ),
+                          const SizedBox(height: 24),
                           
-                          // Chat Input
+                          // Session Name Input
+                          TextField(
+                            controller: _sessionController,
+                            decoration: InputDecoration(
+                              labelText: 'Tags (Optional)',
+                              hintText: 'e.g., Morning thoughts, Work notes',
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              prefixIcon: const Icon(Icons.label_outline),
+                            ),
+                          ),
                           const SizedBox(height: 16),
+                          
+                          // Main Text Input
+                          Expanded(
+                            child: TextField(
+                              controller: _textController,
+                              maxLines: null,
+                              expands: true,
+                              textAlignVertical: TextAlignVertical.top,
+                              decoration: InputDecoration(
+                                hintText: 'Free write here...',
+                                border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                contentPadding: const EdgeInsets.all(16),
+                              ),
+                              style: Theme.of(context).textTheme.bodyLarge,
+                            ),
+                          ),
+                          const SizedBox(height: 16),
+                          
+                          // Action Buttons
                           Row(
                             children: [
-                              Expanded(
-                                child: TextField(
-                                  controller: _chatController,
-                                  decoration: const InputDecoration(
-                                    hintText: 'Type your message...',
-                                    border: OutlineInputBorder(),
-                                    contentPadding: EdgeInsets.symmetric(
-                                      horizontal: 12,
-                                      vertical: 8,
-                                    ),
-                                  ),
-                                  onSubmitted: (value) async {
-                                    if (value.trim().isNotEmpty && !state.isChatLoading) {
-                                      await state.sendChatMessage(value);
-                                      _chatController.clear();
-                                    }
-                                  },
-                                ),
-                              ),
-                              const SizedBox(width: 8),
-                              ElevatedButton(
-                                onPressed: state.isChatLoading || _chatController.text.trim().isEmpty
+                              // Upload File Button
+                              OutlinedButton.icon(
+                                onPressed: state.isLoading
                                     ? null
                                     : () async {
-                                        await state.sendChatMessage(_chatController.text);
-                                        _chatController.clear();
+                                        final result = await FilePicker.platform.pickFiles(
+                                          type: FileType.custom,
+                                          allowedExtensions: ['txt', 'md', 'json'],
+                                        );
+                                        
+                                        if (result != null && result.files.isNotEmpty) {
+                                          await state.uploadFile(result.files.first);
+                                        }
                                       },
-                                child: state.isChatLoading
-                                    ? const SizedBox(
-                                        width: 16,
-                                        height: 16,
-                                        child: CircularProgressIndicator(strokeWidth: 2),
-                                      )
-                                    : const Icon(Icons.send),
+                                icon: const Icon(Icons.upload_file),
+                                label: const Text('Upload File'),
+                                style: OutlinedButton.styleFrom(
+                                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                                ),
+                              ),
+                              const SizedBox(width: 16),
+                              
+                              // Process Text Button
+                              Expanded(
+                                child: ElevatedButton.icon(
+                                  onPressed: state.isLoading || !_hasText
+                                      ? null
+                                      : () async {
+                                          await state.addTextFragments(
+                                            _textController.text,
+                                            sessionName: _sessionController.text.isEmpty
+                                                ? null
+                                                : _sessionController.text,
+                                          );
+                                          _textController.clear();
+                                          _sessionController.clear();
+                                          setState(() {
+                                            _hasText = false;
+                                          });
+                                        },
+                                  icon: state.isLoading
+                                      ? const SizedBox(
+                                          width: 20,
+                                          height: 20,
+                                          child: CircularProgressIndicator(strokeWidth: 2),
+                                        )
+                                      : const Icon(Icons.auto_fix_high),
+                                  label: Text(state.isLoading ? 'Processing...' : 'Process Memory'),
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: Theme.of(context).colorScheme.primary,
+                                    foregroundColor: Colors.white,
+                                    padding: const EdgeInsets.symmetric(vertical: 16),
+                                  ),
+                                ),
                               ),
                             ],
                           ),
@@ -762,34 +565,35 @@ class _HomePageState extends State<HomePage> {
                       ),
                     ),
                   ),
-                ),
+                ],
               ),
-            ],
+            ),
           );
         },
       ),
     );
   }
 
+
   @override
   void dispose() {
+    _textController.removeListener(_onTextChanged);
     _textController.dispose();
     _sessionController.dispose();
-    _chatController.dispose();
-    _chatScrollController.dispose();
     super.dispose();
   }
 }
 
-class ConsolidationPage extends StatelessWidget {
-  const ConsolidationPage({Key? key}) : super(key: key);
+class BuildMemoryPage extends StatelessWidget {
+  const BuildMemoryPage({Key? key}) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('🧠 Memory Consolidation'),
-        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
+        title: const Text('🧠 Memory Staging Area'),
+        backgroundColor: Theme.of(context).appBarTheme.backgroundColor,
+        foregroundColor: Theme.of(context).appBarTheme.foregroundColor,
         leading: Consumer<EngramState>(
           builder: (context, state, child) {
             return IconButton(
@@ -810,25 +614,27 @@ class ConsolidationPage extends StatelessWidget {
                 if (state.error != null) ...[
                   Container(
                     width: double.infinity,
-                    padding: const EdgeInsets.all(12),
-                    margin: const EdgeInsets.only(bottom: 16),
+                    padding: const EdgeInsets.all(16),
+                    margin: const EdgeInsets.only(bottom: 24),
                     decoration: BoxDecoration(
-                      color: Colors.red.shade100,
-                      border: Border.all(color: Colors.red.shade300),
-                      borderRadius: BorderRadius.circular(8),
+                      color: Colors.red.shade900.withOpacity(0.2),
+                      border: Border.all(color: Colors.red.shade600),
+                      borderRadius: BorderRadius.circular(12),
                     ),
                     child: Row(
                       children: [
+                        Icon(Icons.error, color: Colors.red.shade400, size: 20),
+                        const SizedBox(width: 12),
                         Expanded(
                           child: Text(
                             state.error!,
-                            style: TextStyle(color: Colors.red.shade700),
+                            style: TextStyle(color: Colors.red.shade300),
                           ),
                         ),
                         IconButton(
                           onPressed: state.clearMessages,
-                          icon: const Icon(Icons.close),
-                          iconSize: 16,
+                          icon: Icon(Icons.close, color: Colors.red.shade400),
+                          iconSize: 20,
                         ),
                       ],
                     ),
@@ -838,25 +644,27 @@ class ConsolidationPage extends StatelessWidget {
                 if (state.successMessage != null) ...[
                   Container(
                     width: double.infinity,
-                    padding: const EdgeInsets.all(12),
-                    margin: const EdgeInsets.only(bottom: 16),
+                    padding: const EdgeInsets.all(16),
+                    margin: const EdgeInsets.only(bottom: 24),
                     decoration: BoxDecoration(
-                      color: Colors.green.shade100,
-                      border: Border.all(color: Colors.green.shade300),
-                      borderRadius: BorderRadius.circular(8),
+                      color: Colors.green.shade900.withOpacity(0.2),
+                      border: Border.all(color: Colors.green.shade600),
+                      borderRadius: BorderRadius.circular(12),
                     ),
                     child: Row(
                       children: [
+                        Icon(Icons.check_circle, color: Colors.green.shade400, size: 20),
+                        const SizedBox(width: 12),
                         Expanded(
                           child: Text(
                             state.successMessage!,
-                            style: TextStyle(color: Colors.green.shade700),
+                            style: TextStyle(color: Colors.green.shade300),
                           ),
                         ),
                         IconButton(
                           onPressed: state.clearMessages,
-                          icon: const Icon(Icons.close),
-                          iconSize: 16,
+                          icon: Icon(Icons.close, color: Colors.green.shade400),
+                          iconSize: 20,
                         ),
                       ],
                     ),
@@ -864,156 +672,194 @@ class ConsolidationPage extends StatelessWidget {
                 ],
 
                 // Original Content Section
-                Card(
-                  child: Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            const Icon(Icons.description, size: 20),
-                            const SizedBox(width: 8),
-                            Text(
-                              'Original Content',
-                              style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                            const Spacer(),
-                            Chip(
-                              label: Text(
-                                state.contentSource == 'text_input' 
-                                    ? 'Text Input' 
-                                    : 'File: ${state.contentSource}',
-                                style: const TextStyle(fontSize: 12),
-                              ),
-                              backgroundColor: Colors.blue.shade100,
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 12),
-                        Container(
-                          width: double.infinity,
-                          height: 200,
-                          padding: const EdgeInsets.all(12),
-                          decoration: BoxDecoration(
-                            color: Colors.grey.shade50,
-                            border: Border.all(color: Colors.grey.shade300),
-                            borderRadius: BorderRadius.circular(8),
+                Container(
+                  padding: const EdgeInsets.all(24),
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).cardColor,
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(
+                      color: Theme.of(context).colorScheme.primary.withOpacity(0.2),
+                    ),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Icon(
+                            Icons.description, 
+                            size: 24,
+                            color: Theme.of(context).colorScheme.primary,
                           ),
-                          child: SingleChildScrollView(
+                          const SizedBox(width: 12),
+                          Text(
+                            'Fragments',
+                            style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                              fontWeight: FontWeight.bold,
+                              color: Theme.of(context).colorScheme.primary,
+                            ),
+                          ),
+                          const Spacer(),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                            decoration: BoxDecoration(
+                              color: Theme.of(context).colorScheme.secondary.withOpacity(0.2),
+                              borderRadius: BorderRadius.circular(20),
+                              border: Border.all(
+                                color: Theme.of(context).colorScheme.secondary.withOpacity(0.3),
+                              ),
+                            ),
                             child: Text(
-                              state.rawContent ?? '',
-                              style: const TextStyle(fontSize: 14, height: 1.5),
+                              state.contentSource == 'text_input' 
+                                  ? 'Text Input' 
+                                  : 'File: ${state.contentSource}',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Theme.of(context).colorScheme.secondary,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 20),
+                      Container(
+                        width: double.infinity,
+                        height: 200,
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: Theme.of(context).colorScheme.surface.withOpacity(0.5),
+                          border: Border.all(
+                            color: Theme.of(context).colorScheme.onSurface.withOpacity(0.2),
+                          ),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: SingleChildScrollView(
+                          child: Text(
+                            state.rawContent ?? '',
+                            style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                              height: 1.6,
+                              color: Theme.of(context).colorScheme.onSurface,
                             ),
                           ),
                         ),
-                        const SizedBox(height: 16),
+                      ),
+                        const SizedBox(height: 20),
                         SizedBox(
                           width: double.infinity,
                           child: ElevatedButton.icon(
-                            onPressed: state.isConsolidating ? null : state.consolidateMemory,
-                            icon: state.isConsolidating 
+                            onPressed: state.isBuilding ? null : state.buildMemory,
+                            icon: state.isBuilding 
                                 ? const SizedBox(
-                                    width: 16,
-                                    height: 16,
+                                    width: 20,
+                                    height: 20,
                                     child: CircularProgressIndicator(strokeWidth: 2),
                                   )
                                 : const Icon(Icons.auto_fix_high),
-                            label: Text(state.isConsolidating ? 'Consolidating...' : 'Consolidate Memory'),
+                            label: Text(state.isBuilding ? 'Building...' : 'Build Memory'),
                             style: ElevatedButton.styleFrom(
-                              backgroundColor: Theme.of(context).primaryColor,
+                              backgroundColor: Theme.of(context).colorScheme.primary,
                               foregroundColor: Colors.white,
-                              padding: const EdgeInsets.symmetric(vertical: 12),
+                              padding: const EdgeInsets.symmetric(vertical: 16),
                             ),
                           ),
                         ),
                       ],
                     ),
                   ),
-                ),
 
-                // Consolidated Content Section (shown after consolidation)
-                if (state.consolidatedContent != null) ...[
-                  const SizedBox(height: 16),
-                  Card(
-                    child: Padding(
-                      padding: const EdgeInsets.all(16),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              const Icon(Icons.psychology, size: 20, color: Colors.green),
-                              const SizedBox(width: 8),
-                              Text(
-                                'Consolidated Memory',
-                                style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                                  fontWeight: FontWeight.bold,
-                                  color: Colors.green.shade700,
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 12),
-                          Container(
-                            width: double.infinity,
-                            padding: const EdgeInsets.all(12),
-                            decoration: BoxDecoration(
-                              color: Colors.green.shade50,
-                              border: Border.all(color: Colors.green.shade300),
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: Text(
-                              state.consolidatedContent!,
-                              style: const TextStyle(fontSize: 14, height: 1.5),
-                            ),
-                          ),
-                          const SizedBox(height: 16),
-                          Row(
-                            children: [
-                              Expanded(
-                                child: ElevatedButton.icon(
-                                  onPressed: state.isLoading ? null : state.approveConsolidation,
-                                  icon: state.isLoading 
-                                      ? const SizedBox(
-                                          width: 16,
-                                          height: 16,
-                                          child: CircularProgressIndicator(strokeWidth: 2),
-                                        )
-                                      : const Icon(Icons.check),
-                                  label: Text(state.isLoading ? 'Saving...' : 'Approve & Save'),
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: Colors.green,
-                                    foregroundColor: Colors.white,
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: OutlinedButton.icon(
-                                  onPressed: state.rejectConsolidation,
-                                  icon: const Icon(Icons.close),
-                                  label: const Text('Reject'),
-                                  style: OutlinedButton.styleFrom(
-                                    foregroundColor: Colors.red,
-                                    side: BorderSide(color: Colors.red.shade300),
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ],
+                // Built Content Section (shown after building)
+                if (state.builtContent != null) ...[
+                  const SizedBox(height: 32),
+                  Container(
+                    padding: const EdgeInsets.all(24),
+                    decoration: BoxDecoration(
+                      color: Theme.of(context).cardColor,
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(
+                        color: Theme.of(context).colorScheme.primary.withOpacity(0.2),
                       ),
                     ),
-                  ),
-                ],
-              ],
-            ),
-          );
-        },
-      ),
-    );
-  }
-} 
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Icon(
+                              Icons.psychology, 
+                              size: 24, 
+                              color: Theme.of(context).colorScheme.primary,
+                            ),
+                            const SizedBox(width: 12),
+                            Text(
+                              'Finished Engram',
+                              style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                                fontWeight: FontWeight.bold,
+                                color: Theme.of(context).colorScheme.primary,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 20),
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            color: Theme.of(context).colorScheme.primary.withOpacity(0.05),
+                            border: Border.all(
+                              color: Theme.of(context).colorScheme.primary.withOpacity(0.3),
+                            ),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Text(
+                            state.builtContent!,
+                            style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                              height: 1.6,
+                              color: Theme.of(context).colorScheme.onSurface,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 24),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: ElevatedButton.icon(
+                                onPressed: state.isLoading ? null : state.approveBuild,
+                                icon: state.isLoading 
+                                    ? const SizedBox(
+                                        width: 16,
+                                        height: 16,
+                                        child: CircularProgressIndicator(strokeWidth: 2),
+                                      )
+                                    : const Icon(Icons.check),
+                                label: Text(state.isLoading ? 'Saving...' : 'Approve & Save'),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: Colors.green.shade600,
+                                  foregroundColor: Colors.white,
+                                  padding: const EdgeInsets.symmetric(vertical: 16),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 16),
+                            Expanded(
+                              child: OutlinedButton.icon(
+                                onPressed: state.rejectBuild,
+                                icon: const Icon(Icons.close),
+                                label: const Text('Reject'),
+                                style: OutlinedButton.styleFrom(
+                                  foregroundColor: Colors.red.shade400,
+                                  side: BorderSide(color: Colors.red.shade400),
+                                  padding: const EdgeInsets.symmetric(vertical: 16),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  )
+                ],],
+            ));
+            }
+            ));}
+        }
