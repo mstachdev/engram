@@ -1,3 +1,10 @@
+the focus is on learning advanced techniques with LLMs
+- this means it will be hard
+- this likely means it will require research papers for specific problems
+- style: fast, and wild (e.g., buy mac mini with 32GB ram to host model and build app)
+
+
+
 [x] download new model
 [x] rename cortex to hippocampus
 [x] sketch out new cortex (data entry via web app + database)

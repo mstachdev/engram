@@ -23,3 +23,14 @@ priority is getting it on phones and used by friend.
 second priority is getting the AI working.
 this is to learn about building application using LLMs rather than the UI, or story, or vision
 
+6/29/2025:
+engram app is a step up
+previous app bythefire was just front end
+this is at least 3x more complicated 
+front end, backend, inference server
+frontend will be simpler
+backend functions take inputs to app and process them
+- processing can include passing to inference server for transformation
+vllm server just processes requests
+backend will grow in complexity - it is where the fancy llm glue will live
+

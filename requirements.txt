@@ -1,12 +1,17 @@
-# Hippocampus (Memory Consolidation)
-openai
-letta
-python-dateutil
+# Engram - Unified Requirements
 
-# Cortex (Fragment Processing)
+# Core Flask API
 flask>=2.3.0
 flask-cors>=4.0.0
 
+# LLM and AI
+openai>=1.0.0
 vllm>=0.3.0
+
+# Memory Management (Hippocampus)
+letta
+
+# Data Processing
+python-dateutil>=2.8.0
 numpy
-uuid 
+requests>=2.31.0

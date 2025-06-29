@@ -61,7 +61,7 @@ def process_fragments_to_memory(fragment_ids: List[str], session_id: str = None)
     
     # Import hippocampus functions (the renamed cortex module)
     try:
-        from hippocampus.completion import process_fragments
+        from modules.hippocampus.memory import process_fragments
         
         # Process fragments into memory
         memory = process_fragments(

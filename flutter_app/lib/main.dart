@@ -44,7 +44,6 @@ class EngramApp extends StatelessWidget {
 }
 
 
-
 class EngramState extends ChangeNotifier {
   List<Fragment> fragments = [];
   bool isLoading = false;
@@ -59,7 +58,6 @@ class EngramState extends ChangeNotifier {
   String? contentSource; // 'text_input' or filename
   
   static const String apiBase = 'http://localhost:5000';
-  static const String vllmApiBase = 'http://localhost:8000';
 
   // Navigate to build memory page with text content
   void navigateToBuildMemory(String content, String source) {
@@ -74,8 +72,9 @@ class EngramState extends ChangeNotifier {
     
     setLoading(true);
     try {
+      // returns json of fragments with some metadata (ids, length)
       final response = await http.post(
-        Uri.parse('$apiBase/fragments'),
+        Uri.parse('$apiBase/api/cortex/fragments'),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({
           'text': text,
@@ -86,7 +85,8 @@ class EngramState extends ChangeNotifier {
 
       final result = jsonDecode(response.body);
       if (result['success'] == true) {
-        successMessage = 'Added ${result['fragments_added']} fragments';
+        final data = result['data'];
+        successMessage = 'Added ${data['fragments_added']} fragments';
         // Navigate to build memory page
         navigateToBuildMemory(text, 'text_input');
       } else {
@@ -106,7 +106,7 @@ class EngramState extends ChangeNotifier {
       final base64Content = base64Encode(bytes);
 
       final response = await http.post(
-        Uri.parse('$apiBase/fragments/file'),
+        Uri.parse('$apiBase/api/cortex/fragments/file'),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({
           'file_content': base64Content,
@@ -117,7 +117,8 @@ class EngramState extends ChangeNotifier {
 
       final result = jsonDecode(response.body);
       if (result['success'] == true) {
-        successMessage = 'Extracted ${result['fragments_added']} fragments from ${file.name}';
+        final data = result['data'];
+        successMessage = 'Extracted ${data['fragments_added']} fragments from ${file.name}';
         // Navigate to build memory page with file content
         navigateToBuildMemory(content, file.name);
       } else {
@@ -134,14 +135,14 @@ class EngramState extends ChangeNotifier {
     
     try {
       final response = await http.get(
-        Uri.parse('$vllmApiBase/v1/models'),
+        Uri.parse('$apiBase/api/cortex/models'),
         headers: {'Content-Type': 'application/json'},
       );
       
       if (response.statusCode == 200) {
         final result = jsonDecode(response.body);
-        if (result['data'] != null && result['data'].isNotEmpty) {
-          availableModel = result['data'][0]['id'];
+        if (result['success'] == true && result['data']['data'] != null && result['data']['data'].isNotEmpty) {
+          availableModel = result['data']['data'][0]['id'];
           print('Found model: $availableModel');
         }
       }
@@ -157,32 +158,26 @@ class EngramState extends ChangeNotifier {
   Future<void> buildMemory() async {
     if (rawContent == null) return;
     
-    await _fetchAvailableModels();
     setBuilding(true);
     
     try {
-      final prompt = """You are helping build memories from fragments of text. Try to infer what the user is writing about. Then, complete the thoughts so they are full sentences. Your task is add text to make the fragments the user provides seem like a complete journal entry. Do not add any new details but try to add words so there is clarity.
-
-Text to build into memory:
-${rawContent!}""";
-
       final response = await http.post(
-        Uri.parse('$vllmApiBase/v1/chat/completions'),
+        Uri.parse('$apiBase/api/cortex/memory/build'),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({
-          'model': availableModel ?? '../models/Qwen2.5-3B-Instruct-GPTQ-Int8/',
-          'messages': [
-            {'role': 'user', 'content': prompt}
-          ],
-          'max_tokens': 1000,
-          'temperature': 0.7,
+          'content': rawContent!,
+          'source': contentSource ?? 'text_input',
         }),
       );
 
       if (response.statusCode == 200) {
         final result = jsonDecode(response.body);
-        builtContent = result['choices'][0]['message']['content'];
-        successMessage = 'Memory built successfully!';
+        if (result['success'] == true) {
+          builtContent = result['data']['built_content'];
+          successMessage = 'Memory built successfully!';
+        } else {
+          error = result['error'] ?? 'Memory building failed';
+        }
       } else {
         error = 'Memory building failed: ${response.statusCode}';
       }
@@ -281,7 +276,7 @@ class MainPage extends StatelessWidget {
       builder: (context, state, child) {
         // Show build memory page if we have raw content
         if (state.rawContent != null) {
-          return const BuildMemoryPage();
+          return const BuildMildMemoryPage();
         }
         // Otherwise show the main input page
         return const HomePage();
@@ -551,7 +546,7 @@ class _HomePageState extends State<HomePage> {
                                           child: CircularProgressIndicator(strokeWidth: 2),
                                         )
                                       : const Icon(Icons.auto_fix_high),
-                                  label: Text(state.isLoading ? 'Processing...' : 'Process Memory'),
+                                  label: Text(state.isLoading ? 'Processing...' : 'Process memory fragments'),
                                   style: ElevatedButton.styleFrom(
                                     backgroundColor: Theme.of(context).colorScheme.primary,
                                     foregroundColor: Colors.white,
